@@ -1,6 +1,6 @@
 ## WebSSH
 
-This is a fork of huashengdun/webssh that allows to specify the ssh private key path directly from the URL.
+This is a fork of [**huashengdun/webssh**](https://github.com/huashengdun/webssh) that allows to specify the ssh private key path directly from the URL.
 
 To find what's different in this fork go to [MrSinho addition](#passing-the-private-key-path).
 
