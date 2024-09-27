@@ -427,11 +427,11 @@ class IndexHandler(MixinHandler, tornado.web.RequestHandler):
         
         password = self.get_argument('password', None)
         
-        privatekey_path = self.get_argument('privatekey', None)
+        publickey_path = self.get_argument('publickey', None)
         pkey = None
-        if privatekey_path:
+        if publickey_path:
             try:
-                with open(privatekey_path, 'r') as key_file:
+                with open(publickey_path, 'r') as key_file:
                     privatekey = key_file.read()
                 pkey = PrivateKey(privatekey).get_pkey_obj()
             except Exception as e:
