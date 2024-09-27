@@ -349,6 +349,7 @@ class IndexHandler(MixinHandler, tornado.web.RequestHandler):
     def get_privatekey(self):
         name = 'privatekey'
         lst = self.request.files.get(name)
+
         if lst:
             # multipart form
             filename = lst[0]['filename']
@@ -387,28 +388,65 @@ class IndexHandler(MixinHandler, tornado.web.RequestHandler):
                             hostname, port)
                     )
 
+    #def get_args(self):
+    #    hostname = self.get_hostname()
+    #    port = self.get_port()
+    #    username = self.get_value('username')
+    #    password = self.get_argument('password', u'')
+    #    privatekey, filename = self.get_privatekey()
+    #    passphrase = self.get_argument('passphrase', u'')
+    #    totp = self.get_argument('totp', u'')
+#
+    #    if isinstance(self.policy, paramiko.RejectPolicy):
+    #        self.lookup_hostname(hostname, port)
+#
+    #    if privatekey:
+    #        pkey = PrivateKey(privatekey, passphrase, filename).get_pkey_obj()
+    #    else:
+    #        pkey = None
+#
+    #    self.ssh_client.totp = totp
+    #    args = (hostname, port, username, password, pkey)
+    #    logging.debug(args)
+#
+    #    return args
+
     def get_args(self):
-        hostname = self.get_hostname()
-        port = self.get_port()
-        username = self.get_value('username')
-        password = self.get_argument('password', u'')
-        privatekey, filename = self.get_privatekey()
-        passphrase = self.get_argument('passphrase', u'')
-        totp = self.get_argument('totp', u'')
-
-        if isinstance(self.policy, paramiko.RejectPolicy):
-            self.lookup_hostname(hostname, port)
-
-        if privatekey:
-            pkey = PrivateKey(privatekey, passphrase, filename).get_pkey_obj()
-        else:
-            pkey = None
-
+        hostname = self.get_argument('hostname', None)
+        if not hostname or not (is_valid_hostname(hostname) or is_valid_ip_address(hostname)):
+            raise InvalidValueError(f'Invalid hostname: {hostname}')
+        
+        port = self.get_argument('port', DEFAULT_PORT)
+        port = to_int(port)
+        if port is None or not is_valid_port(port):
+            raise InvalidValueError(f'Invalid port: {port}')
+    
+        username = self.get_argument('username', None)
+        if not username:
+            raise InvalidValueError('Missing username')
+        
+        password = self.get_argument('password', None)
+        
+        privatekey_path = self.get_argument('privatekey', None)
+        pkey = None
+        if privatekey_path:
+            try:
+                with open(privatekey_path, 'r') as key_file:
+                    privatekey = key_file.read()
+                pkey = PrivateKey(privatekey).get_pkey_obj()
+            except Exception as e:
+                raise InvalidValueError(f'Failed to load public key: {e}')
+    
+        passphrase = self.get_argument('passphrase', None)
+        totp = self.get_argument('totp', None)
+    
         self.ssh_client.totp = totp
         args = (hostname, port, username, password, pkey)
-        logging.debug(args)
-
+        logging.debug(f'SSH connection args: {args}')
+    
         return args
+
+
 
     def parse_encoding(self, data):
         try:
@@ -446,29 +484,54 @@ class IndexHandler(MixinHandler, tornado.web.RequestHandler):
         logging.warning('Could not detect the default encoding.')
         return 'utf-8'
 
+    #def ssh_connect(self, args):
+    #    ssh = self.ssh_client
+    #    dst_addr = args[:2]
+    #    logging.info('Connecting to {}:{}'.format(*dst_addr))
+#
+    #    try:
+    #        ssh.connect(*args, timeout=options.timeout)
+    #    except socket.error:
+    #        raise ValueError('Unable to connect to {}:{}'.format(*dst_addr))
+    #    except paramiko.BadAuthenticationType:
+    #        raise ValueError('Bad authentication type.')
+    #    except paramiko.AuthenticationException:
+    #        raise ValueError('Authentication failed.')
+    #    except paramiko.BadHostKeyException:
+    #        raise ValueError('Bad host key.')
+#
+    #    term = self.get_argument('term', u'') or u'xterm'
+    #    chan = ssh.invoke_shell(term=term)
+    #    chan.setblocking(0)
+    #    worker = Worker(self.loop, ssh, chan, dst_addr)
+    #    worker.encoding = options.encoding if options.encoding else \
+    #        self.get_default_encoding(ssh)
+    #    return worker
+
     def ssh_connect(self, args):
         ssh = self.ssh_client
-        dst_addr = args[:2]
-        logging.info('Connecting to {}:{}'.format(*dst_addr))
+        hostname, port, username, password, pkey = args
+        logging.info(f'Connecting to {hostname}:{port} as {username}')
 
         try:
-            ssh.connect(*args, timeout=options.timeout)
-        except socket.error:
-            raise ValueError('Unable to connect to {}:{}'.format(*dst_addr))
-        except paramiko.BadAuthenticationType:
-            raise ValueError('Bad authentication type.')
+            ssh.connect(hostname, port=port, username=username, password=password, pkey=pkey, timeout=options.timeout)
+        except socket.error as e:
+            raise ValueError(f'Unable to connect to {hostname}:{port} - {e}')
         except paramiko.AuthenticationException:
-            raise ValueError('Authentication failed.')
-        except paramiko.BadHostKeyException:
-            raise ValueError('Bad host key.')
+            raise ValueError(f'Authentication failed for {username}@{hostname}')
+        except paramiko.SSHException as e:
+            raise ValueError(f'SSH error: {e}')
 
-        term = self.get_argument('term', u'') or u'xterm'
+        term = self.get_argument('term', 'xterm')
         chan = ssh.invoke_shell(term=term)
         chan.setblocking(0)
-        worker = Worker(self.loop, ssh, chan, dst_addr)
-        worker.encoding = options.encoding if options.encoding else \
-            self.get_default_encoding(ssh)
+
+        worker = Worker(self.loop, ssh, chan, (hostname, port))
+        worker.encoding = options.encoding if options.encoding else self.get_default_encoding(ssh)
+
         return worker
+
+
 
     def check_origin(self):
         event_origin = self.get_argument('_origin', u'')
@@ -488,7 +551,27 @@ class IndexHandler(MixinHandler, tornado.web.RequestHandler):
         pass
 
     def get(self):
+        try:
+            args = self.get_args()  # Get the connection arguments from the URL
+            worker = self.ssh_connect(args)  # Attempt to connect
+
+            # Store the worker ID in the session or pass it to the front end
+            self.result.update(id=worker.id, encoding=worker.encoding)
+
+        except InvalidValueError as e:
+            logging.error(f'Invalid value: {e}')
+            self.set_status(400)
+            self.write({"error": str(e)})
+        except Exception as e:
+            logging.error(f'Unexpected error: {e}')
+            self.set_status(500)
+            self.write({"error": str(e)})
+        
+        # After successful connection, render the terminal page
         self.render('index.html', debug=self.debug, font=self.font)
+
+
+
 
     @tornado.gen.coroutine
     def post(self):
