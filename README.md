@@ -157,7 +157,7 @@ http://localhost:8888/?term=xterm-256color
 
 ### Passing the private key path:
 ```bash
-http://localhost:8888/?privatekey=path/to/privatekey
+http://localhost:8888/?publickey=path/to/privatekey
 ```
 
 ### Use Docker
