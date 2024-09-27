@@ -1,5 +1,9 @@
 ## WebSSH
 
+This is a fork of huashengdun/webssh that allows to specify the ssh private key path directly from the URL.
+
+To find what's different in this fork go to [MrSinho addition](#passing-the-private-key-path).
+
 [![python](https://github.com/huashengdun/webssh/actions/workflows/python.yml/badge.svg)](https://github.com/huashengdun/webssh/actions/workflows/python.yml)
 [![codecov](https://raw.githubusercontent.com/huashengdun/webssh/coverage-badge/coverage.svg)](https://raw.githubusercontent.com/huashengdun/webssh/coverage-badge/coverage.svg)
 ![PyPI - Python Version](https://img.shields.io/pypi/pyversions/webssh.svg)
@@ -147,6 +151,13 @@ http://localhost:8888/?command=pwd
 Passing a terminal type
 ```bash
 http://localhost:8888/?term=xterm-256color
+```
+
+> MrSinho addition:
+
+### Passing the private key path:
+```bash
+http://localhost:8888/?privatekey=path/to/privatekey
 ```
 
 ### Use Docker
